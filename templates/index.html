@@ -1,0 +1,177 @@
+{% load static %}
+<!DOCTYPE HTML>
+<html>
+<head>
+    <title>Django + SocketIO Test</title>
+    <script type="text/javascript" src="//code.jquery.com/jquery-3.2.1.slim.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.3/socket.io.min.js"></script>
+    <script type="module" src="{% static 'amqp-websocket-client.mjs' %}"></script>
+    <!--<script src="https://cdn.jsdelivr.net/npm/amqp-client@0.1.2/lib/amqp-client.min.js"></script>-->
+
+
+    <script type="text/javascript" charset="utf-8">
+        let username,room,receiver;
+        //import { AMQPWebSocketClient } from '/static/amqp-websocket-client.mjs'
+
+        $(document).ready(function(){
+            var socket = io.connect();
+            
+            //consume messages
+            //var amqpClient1 = require( 'amqp-client' ).create("amqp://localhost");
+            /*
+            const tls = window.location.scheme === "https:"
+            const url = `${tls ? "wss" : "ws"}://${window.location.host}`
+            const amqp = new AMQPWebSocketClient(url, "/", "guest", "guest")
+
+            async function start() {
+                try {
+                  const conn = await amqp.connect()
+                  const ch = await conn.channel()
+                  const q = await ch.queue(receiver+username)
+                  const consumer = await q.subscribe({noAck: false}, (msg) => {
+                    $("#room").append(msg)
+                    msg.ack()
+                  })
+                } catch (err) {
+                  $("#room").append("Error", err)
+                  //setTimeout(start, 1000)
+                }
+              }
+              */
+            socket.on('connect', function() {
+                username = prompt("Enter Username")
+                while(!username){
+                    username = prompt("Enter Username")
+                }
+                socket.emit('connectionEstablised', {data: `${username}`});
+            });
+            socket.on('disconnect', function() {
+                $('#log').append('<br>Disconnected');
+            });
+            socket.on('my_response', function(msg) {
+                $('#log').append('<br>User: <h3>' + msg.data+'</h3>');
+            });
+
+            socket.on('connection_response', function(users) {
+                $("#log").empty()
+                $('#log').append(`<div>`);
+                    for(let user in users.data){
+                        if(user !== "null" && user !== username){
+                            $('#log').append(`<h3 style="cursor:pointer;" id="usernames">`+ user + '</h3>');
+                    }
+                }
+                $('#log').append(`</div>`);
+                
+            });
+
+            socket.on('message', function(msg,callback) {
+                /*amqpClient1.worker( receiver+username, {}, function( msg, cb ) {
+                    $("#room").append( "Got msg "+ msg.content.toString() );
+                    cb(true);
+                } );
+                start()
+                */
+                if(msg.sender !== username){
+                    $('#room').append('<br>'+msg.sender+': ' + msg.data);
+                }
+                callback({
+                    status:"ok"
+                })
+            });
+            
+            document.addEventListener('click', function(e) {
+                e = e || window.event;
+                var target = e.target || e.srcElement,
+                user = target.textContent || target.innerText; 
+                if(e.target.id === "usernames"){
+                    receiver = user
+                    let sorting = username.toLowerCase() < user.toLowerCase()
+                    if(sorting){
+                        room = username.toLowerCase()+user.toLowerCase()
+                        $("#chatuser").empty()
+                        $('#chatuser').append('<h3> Chat With :'+user.toLowerCase()+'</h3>');
+                        /*amqpClient1.worker( receiver+username, {}, function( msg, cb ) {
+                            $("#room").append( "Got msg "+ msg.content.toString() );
+                        cb(true);
+                        } );
+                        */
+                        socket.emit('join',{room:username.toLowerCase()+user.toLowerCase(),sender:username.toLowerCase(),receiver:user.toLowerCase()})
+                    }
+                    else{
+                        room = user.toLowerCase()+username.toLowerCase()
+                        $("#chatuser").empty()
+                        $('#chatuser').append('<h3> Chat With :'+user.toLowerCase()+'</h3>');
+                        /*amqpClient1.worker( receiver+username, {}, function( msg, cb ) {
+                            $("#room").append( "Got msg "+ msg.content.toString() );
+                        cb(true);
+                        } );
+                        */
+                        socket.emit('join',{room:user.toLowerCase()+username.toLowerCase(),sender:username.toLowerCase(),receiver:user.toLowerCase()})
+                    }
+                }
+                if(e.target.id === "sendMessage"){
+                    var message = $("#message").val()
+                    $('#room').append('<br>Me : ' + message);
+                    socket.emit('my_room_event',{room:room,data:message,sender:username,receiver:receiver},(err,response) => {
+                        if(err){
+        
+                        }
+                        else{
+        
+                        }
+                    })
+                }
+            }, false);
+
+            // event handler for server sent data
+            // the data is displayed in the "Received" section of the page
+            // handlers for the different forms in the page
+            // these send data to the server in a variety of ways
+            $('form#emit').submit(function(event) {
+                socket.emit('my_event', {data: $('#emit_data').val()});
+                return false;
+            });
+            $('form#broadcast').submit(function(event) {
+                socket.emit('my_broadcast_event', {data: $('#broadcast_data').val()});
+                return false;
+            });
+            $('form#join').submit(function(event) {
+                socket.emit('join', {room: $('#join_room').val()});
+                return false;
+            });
+            $('form#leave').submit(function(event) {
+                socket.emit('leave', {room: $('#leave_room').val()});
+                return false;
+            });
+            $('form#send_room').submit(function(event) {
+                socket.emit('my_room_event', {room: $('#room_name').val(), data: $('#room_data').val(), sender:username,receiver:receiver,date:new Date().toString()});
+                return false;
+            });
+            $('form#close').submit(function(event) {
+                socket.emit('close_room', {room: $('#close_room').val()});
+                return false;
+            });
+            $('form#disconnect').submit(function(event) {
+                socket.emit('disconnect_request');
+                return false;
+            });
+        });
+    </script>
+</head>
+<body>
+    
+    <h1>Django + SocketIO Test</h1>
+    <h2>Chat Space:</h2>
+    <div id="room">
+        <div id="chatuser"></div>
+        <div>
+            <input type="text" name="message" id="message"/>
+            <button id="sendMessage" >Send</button>
+        </div>
+    </div>
+
+    <h2 style="position:absolute;top:3vh;left:60vw;">Users:</h2>
+    <div><div id="log" style="position:absolute;top:9vh;left:60vw;"></div></div>
+    
+</body>
+</html>
