@@ -49,7 +49,9 @@
                 $('#log').append('<br>Disconnected');
             });
             socket.on('my_response', function(msg) {
-                $('#log').append('<br>User: <h3>' + msg.data+'</h3>');
+                if(msg.sender !== username) {
+                    $('#room').append('<br>'+ msg.sender +': ' + msg.data);
+                }
             });
 
             socket.on('connection_response', function(users) {
@@ -73,10 +75,10 @@
                 */
                 if(msg.sender !== username){
                     $('#room').append('<br>'+msg.sender+': ' + msg.data);
+                    callback({
+                        status:"ok"
+                    })
                 }
-                callback({
-                    status:"ok"
-                })
             });
             
             document.addEventListener('click', function(e) {
@@ -112,7 +114,7 @@
                 if(e.target.id === "sendMessage"){
                     var message = $("#message").val()
                     $('#room').append('<br>Me : ' + message);
-                    socket.emit('my_room_event',{room:room,data:message,sender:username,receiver:receiver},(err,response) => {
+                    socket.emit('my_room_event',{room:room,data:message,sender:username,receiver:receiver,date:new Date().toString()},(err,response) => {
                         if(err){
         
                         }

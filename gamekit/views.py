@@ -5,9 +5,12 @@ async_mode = None
 
 from base64 import decode
 import os
+from django.dispatch import receiver
 from django.shortcuts import render
 import socketio
 import pika
+from marshmallow import Schema, fields
+
 
 import json
 
@@ -49,29 +52,26 @@ def background_thread():
                  namespace='/test')
 
 def callback(response,queue_name,sid,message):
-        q = channel.queue_declare(queue=queue_name, durable=True)
-        q_len = q.method.message_count
-        print(q_len)
-        if response and q_len > 0:
+        if response:
+            channel = connection.channel()
+            q = channel.queue_declare(queue=queue_name, durable=True)
+            q_len = q.method.message_count
+            if q_len > 0:
+                for method_frame, properties, body in channel.consume(queue_name):
 
-            for method_frame, properties, body in channel.consume(queue_name):
+                    # Display the message parts
 
-                # Display the message parts
-                print("Frame",method_frame)
-                print("Properties",properties)
-                print("body",body)
+                    # Acknowledge the message
+                    channel.basic_ack(method_frame.delivery_tag)
+                    # Escape out of the loop after 10 messages
+                    if method_frame.delivery_tag == 1:
+                        channel.cancel()
+                        break
 
-                # Acknowledge the message
-                channel.basic_ack(method_frame.delivery_tag)
-
-                # Escape out of the loop after 10 messages
-                if method_frame.delivery_tag == 1:
-                    break
-
-                if method_frame.delivery_tag >= q_len:
-                    channel.stop_consuming()
-                    break
-
+                    if method_frame.delivery_tag >= q_len:
+                        channel.stop_consuming()
+                        channel.cancel()
+                        break
             # channel.queue_declare(queue=queue_name, durable=True)
             # channel.basic_qos(prefetch_count=1)
             # channel.basic_consume(queue=queue_name,on_message_callback=lambda ch, method, properties, body: room_event_callback(ch,method,properties,body,sid,message))
@@ -79,7 +79,6 @@ def callback(response,queue_name,sid,message):
 
 def message_callback(ch, method, properties, body,sid,message):
     recieved = body.decode()
-    print("received %r" % body.decode())
     ch.basic_ack(delivery_tag=method.delivery_tag)
     ch.stop_consuming()
     # sio.emit('my_response', {'data': recieved,'sender':message['sender'],'receiver':message['receiver']},
@@ -90,7 +89,6 @@ def message_callback(ch, method, properties, body,sid,message):
 
 def room_event_callback(ch, method, properties, body,sid,message):
     recieved = body.decode()
-    print("received %r" % body.decode())
     ch.basic_ack(delivery_tag=method.delivery_tag)
     ch.stop_consuming()
     # sio.emit('my_response', {'data': recieved,'sender':message['sender'],'receiver':message['receiver']},
@@ -114,23 +112,21 @@ def connectionEstablised(sid, message):
 
 @sio.event
 def join(sid, message):
-    sio.enter_room(sid,message['room'])
     try:
+        channel = connection.channel()
         queue_name = message['receiver'] + message['sender']
         q = channel.queue_declare(queue=queue_name, durable=True)
         q_len = q.method.message_count
-        print(q_len)
         channel.basic_qos(prefetch_count=1)
         if q_len > 0:
             for method_frame, properties, body in channel.consume(queue_name):
-
                 # Display the message parts
-                print("body",body.decode())
                 messages.append(body.decode())
                 # Acknowledge the message
                 channel.basic_ack(method_frame.delivery_tag)
                 if method_frame.delivery_tag >= q_len:
                     channel.stop_consuming()
+                    channel.cancel()
                     break
 
     except BaseException as exception:
@@ -138,8 +134,15 @@ def join(sid, message):
     
     # channel.basic_consume(queue=queue_name,on_message_callback=lambda ch, method, properties, body: message_callback(ch,method,properties,body,sid,message))
     # channel.start_consuming()
-    sio.emit('my_response', {'data': message['room'],'sender':message['sender'],'receiver':message['receiver']},
-             room=message['room'])
+    
+    sio.enter_room(sid,message['room'])
+    if len(messages) > 0:
+        print(messages)
+        for msg in messages:
+            loaded_str = json.loads(msg)
+            # print(type(loaded_str))
+            sio.emit('my_response', {'data': loaded_str['data'],'sender':loaded_str['sender'],'receiver':loaded_str['receiver'],'date':loaded_str['data']},
+                room=message['room'])
 
 
 @sio.event

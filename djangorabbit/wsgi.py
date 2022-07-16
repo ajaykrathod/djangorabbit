@@ -17,7 +17,7 @@ import socketio
 import eventlet
 import eventlet.wsgi
 
-os.environ.setdefault('', 'djangorabbit.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'djangorabbit.settings')
 django_app = StaticFilesHandler(get_wsgi_application())
 application = socketio.Middleware(sio, wsgi_app=django_app,socketio_path='socket.io')
 
